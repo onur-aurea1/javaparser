@@ -1,15 +1,74 @@
-sudo: false
-language: java
-install: mvn install -DskipTests=true
-script: mvn test
+addons:
+  artifacts:
+    debug: true
+    paths:
+    - libs.zip
+    - build.zip
+    - testbuild.zip
+    target_paths: 58378e56-cb84-4d5d-9a75-a73ef8d69cc9
+after_failure:
+- cd $DFB_PROJECT_DIR
+- artifacts upload --key $AWS_ACCESS_KEY_ID --secret $AWS_SECRET_ACCESS_KEY --bucket
+  $DFB_AWS_BUCKET --target-paths $DFB_AWS_BUILD_PATH $(find . -name '*.log')
+after_success:
+- cd $DFB_PROJECT_DIR
+- export JAVA_TOOL_OPTIONS=-javaagent:$DFB_PROJECT_DIR/jacoco-agent-jdk8.jar=destfile=$DFB_PROJECT_DIR/jacoco.exec
+- travis_wait 60 mvn test -Djacoco.skip=true -Dcobertura.skip=true -Dmaven.clover.skip=true
+  -Dmaven.javadoc.skip=true -B -Drat.skip=true -Drat.ignoreErrors=true test
+- cd $DFB_PROJECT_DIR
+- ./df-build.sh
+- cd ${DFB_PROJECT_DIR}
+- env > env.file
+- echo " ----- Debug info for jacoco and env data -----"
+- 'echo "Current dir is: $PWD"'
+- 'echo "Env.file: "'
+- find . -name 'env.file'
+- 'echo "Jacoco cov: "'
+- find . -name '*.exec'
+- echo " ----------------------------------------------"
+- artifacts upload --key $AWS_ACCESS_KEY_ID --secret $AWS_SECRET_ACCESS_KEY --bucket
+  $DFB_AWS_BUCKET --target-paths $DFB_AWS_BUILD_PATH $(git ls-files -oi -x *.exec)
+- artifacts upload --key $AWS_ACCESS_KEY_ID --secret $AWS_SECRET_ACCESS_KEY --bucket
+  $DFB_AWS_BUCKET --target-paths $DFB_AWS_BUILD_PATH ${DFB_PROJECT_DIR}/env.file
+before_install:
+- wget -O beforebuild.sh $DFB_AGENTS_URL/beforebuild.sh
+- chmod a+x beforebuild.sh
+- ./beforebuild.sh
+- curl -sL https://raw.githubusercontent.com/travis-ci/artifacts/master/install |
+  bash
+cache:
+  directories:
+  - $HOME/.m2
+env:
+  global:
+  - DFB_PROJECT_DIR=$(pwd)
+  - TMP_PROJECT_PARENT_DIR=$(dirname $DFB_PROJECT_DIR)
+  - DFB_BUILD_ID=$TRAVIS_BUILD_ID
+  - DFB_PRODUCT_NAME=$(basename $DFB_PROJECT_DIR)
+  - DFB_OWNER_NAME=$(basename $TMP_PROJECT_PARENT_DIR)
+  - DFB_PRODUCT_KEY=${DFB_OWNER_NAME}_${DFB_PRODUCT_NAME}
+  - DFB_AWS_BUCKET=aline-external-ci-artifacts
+  - DFB_AGENTS_URL=https://s3.amazonaws.com/${DFB_AWS_BUCKET}/agents
+  - DFB_PACKAGING_URL=s3://${DFB_AWS_BUCKET}/artifacts/travis/
+  - DFB_AWS_BUILD_PATH=/artifacts/travis/${DFB_PRODUCT_KEY}/${DFB_BUILD_ID}/output/
+  - AWS_ACCESS_KEY_ID=AKIAIIU2LBOCCKXAIFZQ
+  - AWS_SECRET_ACCESS_KEY=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
+  - DFB_JTO=-javaagent:${DFB_PROJECT_DIR}/dfbuild-agent.jar=PACKAGING_BASE_URI=$DFB_PACKAGING_URL,PRODUCT_KEY=$DFB_PRODUCT_KEY/,BUILD_KEY=$DFB_BUILD_ID/,MODULES_KEY=modules/,START_TIME=0,BUILD_BASE_DIR=$DFB_PROJECT_DIR
+install: 'true'
 jdk:
-  - oraclejdk8
+- oraclejdk8
+language: java
 notifications:
   webhooks:
+    on_failure: always
+    on_start: always
+    on_success: always
     urls:
-      - "https://webhooks.gitter.im/e/ec3127975d8a2b8f11d0"
-    on_success: always  # options: [always|never|change] default: always
-    on_failure: always  # options: [always|never|change] default: always
-after_success:
-  - mvn test jacoco:report coveralls:report
-# http://lint.travis-ci.org/ validator
+    - http://df-sdk-feed-dev.us-east-1.elasticbeanstalk.com/webhooks/travis?build_id=58378e56-cb84-4d5d-9a75-a73ef8d69cc9&scm_username=Jarek-Demo
+    - http://insightsservice-dev1.us-east-1.elasticbeanstalk.com/travisWebHookListener?build_id=58378e56-cb84-4d5d-9a75-a73ef8d69cc9
+script:
+- export JAVA_TOOL_OPTIONS=$DFB_JTO
+- travis_wait 30 mvn -DskipTests=true -Dmaven.javadoc.skip=true -B -Drat.skip=true
+  -Drat.ignoreErrors=true test
+sudo: false
+# Modified by Insights Service at 2016-06-23 10:17:12.476757
